@@ -106,6 +106,36 @@ export default function AddDocumentPage({ params }: { params: Promise<{ id: stri
     }));
   };
 
+  const handleCheckAllRequired = () => {
+    const newSelections: Record<number, DocumentSelection> = { ...selections };
+    
+    documentTypes.forEach(doc => {
+      if (doc.is_required) {
+        newSelections[doc.id] = {
+          checked: true,
+          notes: newSelections[doc.id]?.notes || ''
+        };
+      }
+    });
+    
+    setSelections(newSelections);
+  };
+
+  const handleUncheckAll = () => {
+    const newSelections: Record<number, DocumentSelection> = {};
+    
+    // Keep the notes but uncheck everything
+    Object.keys(selections).forEach(key => {
+      const docId = Number.parseInt(key);
+      newSelections[docId] = {
+        checked: false,
+        notes: selections[docId]?.notes || ''
+      };
+    });
+    
+    setSelections(newSelections);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -193,10 +223,33 @@ export default function AddDocumentPage({ params }: { params: Promise<{ id: stri
 
         <Card>
           <CardHeader>
-            <CardTitle>Document Checklist</CardTitle>
-            <CardDescription>
-              Check documents submitted and add individual notes for each
-            </CardDescription>
+            <div className="flex items-start justify-between">
+              <div>
+                <CardTitle>Document Checklist</CardTitle>
+                <CardDescription>
+                  Check documents submitted and add individual notes for each
+                </CardDescription>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        handleCheckAllRequired();
+                      } else {
+                        handleUncheckAll();
+                      }
+                    }}
+                    checked={documentTypes.filter(d => d.is_required).every(d => selections[d.id]?.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700 group-hover:text-emerald-600 transition-colors">
+                    Check All Required Docs
+                  </span>
+                </label>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
