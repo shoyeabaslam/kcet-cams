@@ -9,7 +9,7 @@ import DirectorDashboard from '@/components/dashboards/DirectorDashboard';
 import SuperAdminDashboard from '@/components/dashboards/SuperAdminDashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 interface DashboardStats {
   totalStudents?: number;
@@ -18,6 +18,33 @@ interface DashboardStats {
   totalFeesCollected?: number;
   pendingFees?: number;
   totalUsers?: number;
+}
+
+interface DocumentStats {
+  total_students: number;
+  complete_documents: number;
+  incomplete_documents: number;
+  pending_documents: number;
+  completion_rate: number;
+}
+
+interface IncompleteStudent {
+  id: string;
+  application_number: string;
+  full_name: string;
+  status: string;
+  course_code: string;
+  missing_required: number;
+  missing_docs: string[];
+}
+
+interface DocTypeStat {
+  name: string;
+  code: string;
+  is_required: boolean;
+  total_students: number;
+  declared_count: number;
+  pending_count: number;
 }
 
 interface Activity {
@@ -44,10 +71,36 @@ export default function DashboardPage() {
   const [courseDistributionData, setCourseDistributionData] = useState<ChartDataPoint[]>([]);
   const [feeCollectionData, setFeeCollectionData] = useState<ChartDataPoint[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  
+  // Document Officer specific state
+  const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
+  const [incompleteStudents, setIncompleteStudents] = useState<IncompleteStudent[]>([]);
+  const [docTypeStats, setDocTypeStats] = useState<DocTypeStat[]>([]);
 
   useEffect(() => {
-    // Skip fetching for specialized dashboards
-    if (user?.role === 'DocumentOfficer' || user?.role === 'AccountsOfficer' || user?.role === 'Principal' || user?.role === 'Director' || user?.role === 'SuperAdmin') return;
+    // Fetch document stats for DocumentOfficer
+    if (user?.role === 'DocumentOfficer') {
+      const fetchDocumentStats = async () => {
+        try {
+          const res = await fetch('/api/dashboard/document-stats');
+          if (res.ok) {
+            const data = await res.json();
+            setDocumentStats(data.stats);
+            setIncompleteStudents(data.incompleteStudents || []);
+            setDocTypeStats(data.docTypeStats || []);
+          }
+        } catch (error) {
+          console.error('Error fetching document stats:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchDocumentStats();
+      return;
+    }
+
+    // Skip fetching for other specialized dashboards
+    if (user?.role === 'AccountsOfficer' || user?.role === 'Principal' || user?.role === 'Director' || user?.role === 'SuperAdmin') return;
     
     const fetchDashboardData = async () => {
       try {
@@ -175,7 +228,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+        <Card className="border-border">
           <CardHeader>
             <CardTitle>Recent Activities</CardTitle>
             <CardDescription>Latest system actions</CardDescription>
@@ -183,16 +236,16 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-4">
               {activities.slice(0, 4).map((activity, i) => (
-                <div key={`activity-${activity.user}-${i}`} className="flex items-start space-x-3 pb-3 border-b border-gray-100 last:border-0">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-semibold text-blue-900">
+                <div key={`activity-${activity.user}-${i}`} className="flex items-start space-x-3 pb-3 border-b border-border last:border-0">
+                  <div className="w-8 h-8 bg-chart-1/10 rounded-full flex items-center justify-center flex-shrink-0 border border-chart-1/20">
+                    <span className="text-xs font-semibold text-chart-1">
                       {activity.user.charAt(0).toUpperCase()}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{activity.user}</p>
-                    <p className="text-sm text-gray-600">{activity.action}</p>
-                    <p className="text-xs text-gray-400 mt-1">{activity.time}</p>
+                    <p className="text-sm font-medium text-foreground">{activity.user}</p>
+                    <p className="text-sm text-muted-foreground">{activity.action}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">{activity.time}</p>
                   </div>
                 </div>
               ))}
@@ -200,7 +253,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>Common administrative tasks</CardDescription>
@@ -218,218 +271,314 @@ export default function DashboardPage() {
     </>
   );
 
-  const renderAdmissionStaffDashboard = () => (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <StatCard
-          title="Today's Applications"
-          value={stats.admittedToday || 0}
-          icon="📝"
-          subtitle="New entries"
-          trend="+5 from yesterday"
-          loading={loading}
-        />
-        <StatCard
-          title="Total Students"
-          value={stats.totalStudents || 0}
-          icon="🎓"
-          subtitle="All applications"
-          loading={loading}
-        />
-        <StatCard
-          title="Pending Assignment"
-          value={23}
-          icon="⏳"
-          subtitle="Need course assignment"
-          loading={loading}
-        />
-        <StatCard
-          title="Admitted"
-          value={(stats.totalStudents || 0) - (stats.pendingDocuments || 0)}
-          icon="✅"
-          subtitle="Completed admissions"
-          loading={loading}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Admission Trend</CardTitle>
-            <CardDescription>Daily application entries (Last 7 days)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={admissionTrendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" stroke="#6b7280" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-                />
-                <Line type="monotone" dataKey="students" stroke="#1e40af" strokeWidth={2} dot={{ fill: '#1e40af' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Course Distribution</CardTitle>
-            <CardDescription>Students by course preference</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={courseDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {courseDistributionData.map((entry) => (
-                    <path key={`pie-${entry.name}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-    </>
-  );
-
-  const renderDocumentOfficerDashboard = () => {
-    const sampleStudents = [
-      { id: '1', name: 'Rahul Kumar', missing: 'Transfer Certificate', app: 'APP2025234' },
-      { id: '2', name: 'Priya Sharma', missing: 'Migration Certificate', app: 'APP2025235' },
-      { id: '3', name: 'Amit Singh', missing: 'Character Certificate', app: 'APP2025236' },
-      { id: '4', name: 'Sneha Reddy', missing: 'Aadhar Card', app: 'APP2025237' },
-    ];
-
-    const sampleDocs = [
-      { id: '1', name: 'SSC Certificate', complete: stats.totalStudents || 245, total: stats.totalStudents || 245, percentage: 100 },
-      { id: '2', name: 'Intermediate', complete: (stats.totalStudents || 245) - 2, total: stats.totalStudents || 245, percentage: 99 },
-      { id: '3', name: 'Transfer Certificate', complete: (stats.totalStudents || 245) - (stats.pendingDocuments || 18), total: stats.totalStudents || 245, percentage: 93 },
-      { id: '4', name: 'Aadhar Card', complete: (stats.totalStudents || 245) - 5, total: stats.totalStudents || 245, percentage: 98 },
-      { id: '5', name: 'Photos', complete: stats.totalStudents || 245, total: stats.totalStudents || 245, percentage: 100 },
-    ];
+  const renderAdmissionStaffDashboard = () => {
+    // Filter out courses with 0 students to avoid overlap
+    const filteredCourseData = courseDistributionData.filter(course => (course.value || 0) > 0);
+    const hasValidCourseData = filteredCourseData.length > 0;
 
     return (
       <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <StatCard
+            title="Today's Applications"
+            value={stats.admittedToday || 0}
+            icon="📝"
+            subtitle="New entries"
+            trend="+5 from yesterday"
+            loading={loading}
+          />
+          <StatCard
+            title="Total Students"
+            value={stats.totalStudents || 0}
+            icon="🎓"
+            subtitle="All applications"
+            loading={loading}
+          />
+          <StatCard
             title="Pending Documents"
             value={stats.pendingDocuments || 0}
             icon="📄"
-            subtitle="Incomplete submissions"
-            trend="Priority"
-            trendColor="text-red-600"
+            subtitle="Need verification"
             loading={loading}
           />
           <StatCard
-            title="Complete Documents"
+            title="Completed"
             value={(stats.totalStudents || 0) - (stats.pendingDocuments || 0)}
             icon="✅"
-            subtitle="All documents verified"
+            subtitle="Admissions complete"
             loading={loading}
-          />
-          <StatCard
-            title="Today's Updates"
-            value={34}
-            icon="📝"
-            subtitle="Documents processed"
-            loading={loading}
-          />
-          <StatCard
-            title="Completion Rate"
-            value={`${stats.totalStudents ? Math.round(((stats.totalStudents - (stats.pendingDocuments || 0)) / stats.totalStudents) * 100) : 92.7}%`}
-            icon="📊"
-            subtitle="Overall status"
-            loading={loading}
-            isText
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
+        <div className="grid grid-cols-1 gap-6">
+          <Card className="border-border shadow-sm">
             <CardHeader>
-              <CardTitle>Students Needing Attention</CardTitle>
-              <CardDescription>Incomplete document submissions</CardDescription>
+              <CardTitle>Admission Trend</CardTitle>
+              <CardDescription>Daily application entries over the last 7 days</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {sampleStudents.map((student) => (
-                  <div key={student.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{student.name}</p>
-                      <p className="text-xs text-gray-600">Missing: {student.missing}</p>
-                      <p className="text-xs text-gray-400 mt-1">{student.app}</p>
-                    </div>
-                    <button className="px-3 py-1.5 text-xs font-medium text-blue-900 bg-blue-50 rounded-lg hover:bg-blue-100">
-                      Update
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={admissionTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
+                  <Tooltip
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="students" 
+                    stroke="hsl(var(--chart-1))" 
+                    strokeWidth={3} 
+                    dot={{ fill: 'hsl(var(--chart-1))', r: 5 }} 
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Document Types Status</CardTitle>
-              <CardDescription>Completion by document type</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {sampleDocs.map((doc) => (
-                  <div key={doc.id}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="font-medium text-gray-700">{doc.name}</span>
-                      <span className="text-gray-600">{doc.complete}/{doc.total}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-900 h-2 rounded-full"
-                        style={{ width: `${doc.percentage}%` }}
-                      />
-                    </div>
+          {hasValidCourseData && (
+            <Card className="border-border shadow-sm">
+              <CardHeader>
+                <CardTitle>Course Distribution</CardTitle>
+                <CardDescription>Students enrolled by program</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col lg:flex-row items-center gap-8">
+                  <div className="w-full lg:w-1/2">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <PieChart>
+                        <Pie
+                          data={filteredCourseData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={false}
+                          outerRadius={100}
+                          dataKey="value"
+                          paddingAngle={2}
+                        >
+                          {filteredCourseData.map((entry, index) => {
+                            const colors = [
+                              '#3b82f6', // blue-500
+                              '#8b5cf6', // violet-500
+                              '#ec4899', // pink-500
+                              '#10b981', // emerald-500
+                              '#f59e0b', // amber-500
+                            ];
+                            return (
+                              <Cell 
+                                key={`cell-${entry.name}`} 
+                                fill={colors[index % colors.length]}
+                              />
+                            );
+                          })}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'hsl(var(--card))', 
+                            border: '1px solid hsl(var(--border))', 
+                            borderRadius: '8px',
+                            color: 'hsl(var(--foreground))'
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="w-full lg:w-1/2 space-y-3">
+                    {filteredCourseData.map((course, index) => {
+                      const colors = [
+                        'bg-blue-500',
+                        'bg-violet-500',
+                        'bg-pink-500',
+                        'bg-emerald-500',
+                        'bg-amber-500',
+                      ];
+                      return (
+                        <div key={course.name} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <div 
+                              className={`w-4 h-4 rounded-sm flex-shrink-0 ${colors[index % colors.length]}`}
+                            />
+                            <span className="text-sm font-medium text-foreground">{course.name}</span>
+                          </div>
+                          <span className="text-sm font-bold text-foreground">{course.value}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </>
     );
   };
 
-  const renderAccountsOfficerDashboard = () => {
-    const samplePayments = [
-      { id: '1', name: 'Aditya Verma', amount: 85000, mode: 'Online', time: '10 min ago' },
-      { id: '2', name: 'Kavya Nair', amount: 75000, mode: 'Cash', time: '25 min ago' },
-      { id: '3', name: 'Rohan Patel', amount: 42500, mode: 'Cheque', time: '1 hour ago' },
-      { id: '4', name: 'Divya Menon', amount: 85000, mode: 'Online', time: '2 hours ago' },
-    ];
+  const renderDocumentOfficerDashboard = () => {
+    const completionPercentage = documentStats?.completion_rate || 0;
+    
+    return (
+      <div className="space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard
+            title="Complete Documents"
+            value={documentStats?.complete_documents || 0}
+            icon="✅"
+            subtitle="Fully verified students"
+            loading={loading}
+          />
+          <StatCard
+            title="Incomplete Documents"
+            value={documentStats?.incomplete_documents || 0}
+            icon="⚠️"
+            subtitle="Missing documents"
+            trend="Priority"
+            trendColor="text-destructive"
+            loading={loading}
+          />
+          <StatCard
+            title="Pending Review"
+            value={documentStats?.pending_documents || 0}
+            icon="📄"
+            subtitle="Need initial check"
+            loading={loading}
+          />
+          <StatCard
+            title="Completion Rate"
+            value={`${completionPercentage}%`}
+            icon="📊"
+            subtitle="Overall progress"
+            loading={loading}
+            isText
+          />
+        </div>
 
+        {/* Students with Incomplete Documents */}
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle>Students with Missing Documents</CardTitle>
+            <CardDescription>Requires immediate attention ({incompleteStudents.length} students)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {incompleteStudents.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-lg">🎉 All students have complete documents!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {incompleteStudents.map((student) => (
+                  <div 
+                    key={student.id} 
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors"
+                  >
+                    <div className="flex-1 mb-2 sm:mb-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">{student.full_name}</p>
+                        <span className="px-2 py-0.5 text-xs font-medium bg-destructive/10 text-destructive rounded border border-destructive/20">
+                          {student.missing_required} missing
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {student.application_number} • {student.course_code}
+                      </p>
+                      {student.missing_docs && student.missing_docs.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {student.missing_docs.map((doc, idx) => (
+                            <span 
+                              key={idx}
+                              className="px-2 py-0.5 text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded border border-amber-500/20"
+                            >
+                              {doc}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button className="px-4 py-2 text-xs font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 border border-primary/20 transition-colors">
+                      Update Status
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Document Type Statistics */}
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle>Document Type Statistics</CardTitle>
+            <CardDescription>Completion status by document type</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {docTypeStats.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No document types configured</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {docTypeStats.map((docType) => {
+                  const percentage = docType.total_students > 0 
+                    ? Math.round((docType.declared_count / docType.total_students) * 100)
+                    : 0;
+                  
+                  return (
+                    <div key={docType.code} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{docType.name}</span>
+                          {docType.is_required && (
+                            <span className="px-1.5 py-0.5 text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded border border-blue-500/20">
+                              Required
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-semibold text-foreground">{docType.declared_count}</span>
+                          {' / '}
+                          <span>{docType.total_students}</span>
+                          <span className="ml-2 text-xs">({percentage}%)</span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2.5">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-violet-500 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  const renderAccountsOfficerDashboard = () => {
     const collectionRate = stats.totalFeesCollected && (stats.totalFeesCollected + (stats.pendingFees || 0)) > 0
       ? ((stats.totalFeesCollected / (stats.totalFeesCollected + (stats.pendingFees || 0))) * 100).toFixed(1)
-      : '85.1';
+      : '0';
 
     return (
       <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <StatCard
-            title="Today's Collection"
-            value="₹2,45,000"
-            icon="💰"
-            subtitle="12 payments received"
-            trend="+18% from yesterday"
+            title="Total Fees Collectible"
+            value={`₹${(((stats.totalFeesCollected || 0) + (stats.pendingFees || 0)) / 100000).toFixed(1)}L`}
+            icon="�"
+            subtitle="Total amount"
             loading={loading}
             isText
           />
@@ -459,48 +608,30 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
+        <div className="grid grid-cols-1 gap-6">
+          <Card className="border-border shadow-sm">
             <CardHeader>
               <CardTitle>Monthly Collection Trend</CardTitle>
               <CardDescription>Fee collection in lakhs (₹)</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={feeCollectionData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" stroke="#6b7280" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
                     formatter={(value) => [`₹${value}L`, 'Amount']}
                   />
-                  <Bar dataKey="amount" fill="#1e40af" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="amount" fill="hsl(var(--chart-1))" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Payments</CardTitle>
-              <CardDescription>Latest fee transactions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {samplePayments.map((payment) => (
-                  <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{payment.name}</p>
-                      <p className="text-xs text-gray-600">₹{payment.amount.toLocaleString()} • {payment.mode}</p>
-                      <p className="text-xs text-gray-400 mt-1">{payment.time}</p>
-                    </div>
-                    <span className="px-2 py-1 text-xs font-medium text-green-700 bg-green-50 rounded">
-                      Paid
-                    </span>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -510,17 +641,36 @@ export default function DashboardPage() {
 
   const renderPrincipalDirectorDashboard = () => {
     const sampleStatus = [
-      { id: '1', label: 'Admitted', value: (stats.totalStudents || 245) - (stats.pendingDocuments || 18) - 45, color: 'bg-green-500' },
-      { id: '2', label: 'Fee Pending', value: 45, color: 'bg-yellow-500' },
-      { id: '3', label: 'Documents Pending', value: stats.pendingDocuments || 18, color: 'bg-orange-500' },
-      { id: '4', label: 'New Applications', value: stats.admittedToday || 12, color: 'bg-blue-500' },
+      { id: '1', label: 'Fee Received', value: (stats.totalStudents || 0) - (stats.pendingDocuments || 0), color: 'hsl(var(--chart-3))' },
+      { id: '2', label: 'Documents Pending', value: stats.pendingDocuments || 0, color: 'hsl(var(--chart-2))' },
+      { id: '3', label: 'New Applications', value: stats.admittedToday || 0, color: 'hsl(var(--chart-1))' },
     ];
 
     const sampleMetrics = [
-      { id: '1', label: 'Document Completion Rate', value: '92.7%', icon: '📄' },
-      { id: '2', label: 'Fee Collection Rate', value: '85.1%', icon: '💰' },
-      { id: '3', label: 'Average Processing Time', value: '2.3 days', icon: '⏱️' },
-      { id: '4', label: 'Staff Efficiency', value: 'Excellent', icon: '⭐' },
+      { 
+        id: '1', 
+        label: 'Document Completion Rate', 
+        value: `${stats.totalStudents && stats.totalStudents > 0 ? Math.round(((stats.totalStudents - (stats.pendingDocuments || 0)) / stats.totalStudents) * 100) : 0}%`, 
+        icon: '📄' 
+      },
+      { 
+        id: '2', 
+        label: 'Fee Collection Rate', 
+        value: `${stats.totalFeesCollected && (stats.totalFeesCollected + (stats.pendingFees || 0)) > 0 ? ((stats.totalFeesCollected / (stats.totalFeesCollected + (stats.pendingFees || 0))) * 100).toFixed(1) : 0}%`, 
+        icon: '💰' 
+      },
+      { 
+        id: '3', 
+        label: 'Total Students', 
+        value: stats.totalStudents || 0, 
+        icon: '🎓' 
+      },
+      { 
+        id: '4', 
+        label: 'Active Courses', 
+        value: courseDistributionData.length || 0, 
+        icon: '📚' 
+      },
     ];
 
     return (
@@ -560,7 +710,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-2 border-border">
             <CardHeader>
               <CardTitle>Admission Trend Analysis</CardTitle>
               <CardDescription>Daily admission entries over time</CardDescription>
@@ -568,19 +718,30 @@ export default function DashboardPage() {
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={admissionTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" stroke="#6b7280" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#6b7280" style={{ fontSize: '12px' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" style={{ fontSize: '12px' }} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
                   />
-                  <Line type="monotone" dataKey="students" stroke="#1e40af" strokeWidth={3} dot={{ fill: '#1e40af', r: 4 }} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="students" 
+                    stroke="hsl(var(--chart-1))" 
+                    strokeWidth={3} 
+                    dot={{ fill: 'hsl(var(--chart-1))', r: 4 }} 
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-border">
             <CardHeader>
               <CardTitle>Admission Status</CardTitle>
               <CardDescription>Current breakdown</CardDescription>
@@ -590,13 +751,16 @@ export default function DashboardPage() {
                 {sampleStatus.map((status) => (
                   <div key={status.id}>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="font-medium text-gray-700">{status.label}</span>
-                      <span className="text-gray-900 font-semibold">{status.value}</span>
+                      <span className="font-medium text-foreground">{status.label}</span>
+                      <span className="text-foreground font-semibold">{status.value}</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className={`${status.color} h-2 rounded-full`}
-                        style={{ width: `${((status.value / (stats.totalStudents || 245)) * 100)}%` }}
+                        className="h-2 rounded-full"
+                        style={{ 
+                          width: `${((status.value / (stats.totalStudents || 245)) * 100)}%`,
+                          backgroundColor: status.color
+                        }}
                       />
                     </div>
                   </div>
@@ -607,7 +771,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
+          <Card className="border-border">
             <CardHeader>
               <CardTitle>Course-wise Admissions</CardTitle>
               <CardDescription>Distribution across programs</CardDescription>
@@ -622,20 +786,38 @@ export default function DashboardPage() {
                     labelLine={false}
                     label={({ name, value }) => `${name}: ${value}`}
                     outerRadius={80}
-                    fill="#8884d8"
                     dataKey="value"
                   >
-                    {courseDistributionData.map((entry) => (
-                      <path key={`pie-${entry.name}`} fill={entry.color} />
-                    ))}
+                    {courseDistributionData.map((entry, index) => {
+                      const colors = [
+                        '#3b82f6', // blue-500
+                        '#8b5cf6', // violet-500
+                        '#ec4899', // pink-500
+                        '#10b981', // emerald-500
+                        '#f59e0b', // amber-500
+                      ];
+                      return (
+                        <Cell 
+                          key={`cell-${entry.name}`} 
+                          fill={colors[index % colors.length]}
+                        />
+                      );
+                    })}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-border">
             <CardHeader>
               <CardTitle>Key Metrics</CardTitle>
               <CardDescription>Institutional overview</CardDescription>
@@ -643,12 +825,12 @@ export default function DashboardPage() {
             <CardContent>
               <div className="space-y-4">
                 {sampleMetrics.map((metric) => (
-                  <div key={metric.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div key={metric.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border">
                     <div className="flex items-center space-x-3">
                       <span className="text-2xl">{metric.icon}</span>
-                      <span className="text-sm font-medium text-gray-700">{metric.label}</span>
+                      <span className="text-sm font-medium text-foreground">{metric.label}</span>
                     </div>
-                    <span className="text-sm font-bold text-blue-900">{metric.value}</span>
+                    <span className="text-sm font-bold text-chart-1">{metric.value}</span>
                   </div>
                 ))}
               </div>
@@ -682,14 +864,14 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Welcome Header */}
-        <div className="bg-gradient-to-r from-blue-900 to-blue-800 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-r from-primary to-chart-4 rounded-2xl p-6 text-primary-foreground shadow-lg">
           <h1 className="text-3xl font-bold mb-2">
             Welcome back, {user.username}!
           </h1>
-          <p className="text-blue-100">
+          <p className="text-primary-foreground/90">
             {user.role} Dashboard • Kashmir College of Engineering & Technology
           </p>
-          <p className="text-blue-200 text-sm mt-2">
+          <p className="text-primary-foreground/70 text-sm mt-2">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
@@ -708,7 +890,7 @@ function StatCard({
   icon, 
   subtitle, 
   trend, 
-  trendColor = "text-green-600", 
+  trendColor = "text-chart-3", 
   loading, 
   isText = false 
 }: Readonly<{ 
@@ -728,24 +910,24 @@ function StatCard({
   };
 
   return (
-    <Card>
+    <Card className="border-border">
       <CardContent className="p-6">
         {loading ? (
           <div className="animate-pulse">
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-4" />
-            <div className="h-8 bg-gray-200 rounded w-3/4" />
+            <div className="h-4 bg-muted rounded w-1/2 mb-4" />
+            <div className="h-8 bg-muted rounded w-3/4" />
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-medium text-gray-600">{title}</p>
+              <p className="text-sm font-medium text-muted-foreground">{title}</p>
               <span className="text-2xl">{icon}</span>
             </div>
             <div className="space-y-1">
-              <p className={`${isText ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>
+              <p className={`${isText ? 'text-2xl' : 'text-3xl'} font-bold text-foreground`}>
                 {formatValue()}
               </p>
-              <p className="text-xs text-gray-500">{subtitle}</p>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
               {trend && (
                 <p className={`text-xs font-medium ${trendColor}`}>{trend}</p>
               )}
@@ -760,9 +942,9 @@ function StatCard({
 // Quick Action Button
 function QuickActionButton({ icon, label }: Readonly<{ icon: string; label: string }>) {
   return (
-    <button className="flex flex-col items-center justify-center p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group">
+    <button className="flex flex-col items-center justify-center p-4 bg-muted/50 hover:bg-muted rounded-lg transition-colors group border border-border">
       <span className="text-3xl mb-2 group-hover:scale-110 transition-transform">{icon}</span>
-      <span className="text-sm font-medium text-gray-700">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
     </button>
   );
 }

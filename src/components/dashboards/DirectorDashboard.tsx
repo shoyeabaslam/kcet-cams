@@ -11,6 +11,8 @@ interface Student {
   application_number: string;
   status: string;
   course_name: string;
+  academic_year_id?: number;
+  year_name?: string;
   total_fee: string | number;
   paid_amount: string | number;
   pending_amount: string | number;
@@ -50,6 +52,12 @@ interface CoursePerformance {
   conversionRate: number;
 }
 
+interface AcademicYear {
+  id: number;
+  year_label: string;
+  is_active: boolean;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   'APPLICATION_ENTERED': '#3B82F6',
   'DOCUMENTS_INCOMPLETE': '#EAB308',
@@ -61,6 +69,9 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function DirectorDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
   const [stats, setStats] = useState<DashboardStats>({
     totalApplications: 0,
     totalAdmitted: 0,
@@ -73,9 +84,37 @@ export default function DirectorDashboard() {
   });
   const [loading, setLoading] = useState(true);
 
+  // Fetch academic years on mount
+  useEffect(() => {
+    const fetchAcademicYears = async () => {
+      try {
+        const res = await fetch('/api/academic-years');
+        if (res.ok) {
+          const data = await res.json();
+          setAcademicYears(data.academicYears || []);
+          // Auto-select the active academic year
+          const activeYear = data.academicYears?.find((ay: AcademicYear) => ay.is_active);
+          if (activeYear) {
+            setSelectedAcademicYear(activeYear.id.toString());
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching academic years:', error);
+      }
+    };
+    fetchAcademicYears();
+  }, []);
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Filter students when academic year changes
+  useEffect(() => {
+    if (allStudents.length > 0) {
+      filterStudentsByAcademicYear();
+    }
+  }, [selectedAcademicYear, allStudents]);
 
   const fetchData = async () => {
     try {
@@ -83,13 +122,29 @@ export default function DirectorDashboard() {
       const data = await response.json();
       
       if (data.students) {
-        setStudents(data.students);
-        calculateStats(data.students);
+        setAllStudents(data.students);
+        // Initially show all or filtered students
+        filterStudentsByAcademicYear(data.students);
       }
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filterStudentsByAcademicYear = (studentsData?: Student[]) => {
+    const dataToFilter = studentsData || allStudents;
+    
+    if (selectedAcademicYear === 'all') {
+      setStudents(dataToFilter);
+      calculateStats(dataToFilter);
+    } else {
+      const filtered = dataToFilter.filter(
+        s => s.academic_year_id?.toString() === selectedAcademicYear
+      );
+      setStudents(filtered);
+      calculateStats(filtered);
     }
   };
 
@@ -179,7 +234,6 @@ export default function DirectorDashboard() {
 
   // Course Performance Data
   const getCoursePerformance = (): CoursePerformance[] => {
-    console.log('📊 Director Dashboard - Students data:', students);
     const courseData = students.reduce((acc, student) => {
       const course = student.course_name;
       if (!acc[course]) {
@@ -188,12 +242,8 @@ export default function DirectorDashboard() {
       acc[course].applications += 1;
       if (student.status === 'ADMITTED') acc[course].admitted += 1;
       acc[course].revenue += Number(student.paid_amount) || 0;
-      console.log(`Student: ${student.full_name}, Course: ${course}, Paid Amount: ${student.paid_amount}, Revenue so far: ${acc[course].revenue}`);
       return acc;
     }, {} as Record<string, { applications: number; admitted: number; revenue: number }>);
-    
-    console.log('📊 Course Data:', courseData);
-
     return Object.entries(courseData)
       .map(([course, data]) => ({
         course: course.length > 20 ? course.substring(0, 18) + '..' : course,
@@ -226,7 +276,7 @@ export default function DirectorDashboard() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading institutional analytics...</p>
+          <p className="text-muted-foreground">Loading institutional analytics...</p>
         </div>
       </div>
     );
@@ -238,59 +288,83 @@ export default function DirectorDashboard() {
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl p-6 text-white shadow-lg">
-        <h1 className="text-3xl font-bold mb-2">🏛️ Director&apos;s Strategic Dashboard</h1>
-        <p className="text-purple-100">Institutional Oversight & Strategic Analytics</p>
+      {/* Header with Academic Year Filter */}
+      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-purple-700 rounded-xl p-6 text-white shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">🏛️ Director&apos;s Strategic Dashboard</h1>
+            <p className="text-white/90">Institutional Oversight & Strategic Analytics</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label htmlFor="academic-year-filter" className="text-sm font-medium text-white/90">Academic Year:</label>
+            <select
+              id="academic-year-filter"
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-white/50 min-w-[200px]"
+            >
+              <option value="all" className="bg-gray-800">All Years</option>
+              {academicYears.map((year) => (
+                <option key={year.id} value={year.id.toString()} className="bg-gray-800">
+                  {year.year_label} {year.is_active ? '(Current)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Key Executive Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-blue-500">
+        <Card className="border-l-4 border-l-chart-1">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Applications</p>
-                <p className="text-3xl font-bold text-gray-900">{stats.totalApplications}</p>
-                <p className="text-xs text-gray-500 mt-1">Academic Year 2025-26</p>
+                <p className="text-sm font-medium text-muted-foreground">Total Applications</p>
+                <p className="text-3xl font-bold text-foreground">{stats.totalApplications}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedAcademicYear === 'all' 
+                    ? 'All Academic Years' 
+                    : academicYears.find(y => y.id.toString() === selectedAcademicYear)?.year_label || 'Selected Year'}
+                </p>
               </div>
-              <div className="bg-blue-100 p-3 rounded-full">
+              <div className="bg-chart-1/10 p-3 rounded-full">
                 <span className="text-2xl">📝</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-green-500">
+        <Card className="border-l-4 border-l-chart-3">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Admitted Students</p>
-                <p className="text-3xl font-bold text-gray-900">{stats.totalAdmitted}</p>
-                <p className="text-xs text-green-600 mt-1">
+                <p className="text-sm font-medium text-muted-foreground">Admitted Students</p>
+                <p className="text-3xl font-bold text-foreground">{stats.totalAdmitted}</p>
+                <p className="text-xs text-chart-3 mt-1">
                   {stats.conversionRate.toFixed(1)}% conversion rate
                 </p>
               </div>
-              <div className="bg-green-100 p-3 rounded-full">
+              <div className="bg-chart-3/10 p-3 rounded-full">
                 <span className="text-2xl">🎓</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-emerald-500">
+        <Card className="border-l-4 border-l-chart-5">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Revenue Collected</p>
-                <p className="text-3xl font-bold text-gray-900">
+                <p className="text-sm font-medium text-muted-foreground">Revenue Collected</p>
+                <p className="text-3xl font-bold text-foreground">
                   {formatCurrency(stats.totalRevenue)}
                 </p>
-                <p className="text-xs text-emerald-600 mt-1">
+                <p className="text-xs text-chart-5 mt-1">
                   {stats.collectionRate.toFixed(1)}% collection rate
                 </p>
               </div>
-              <div className="bg-emerald-100 p-3 rounded-full">
+              <div className="bg-chart-5/10 p-3 rounded-full">
                 <span className="text-2xl">💰</span>
               </div>
             </div>
@@ -301,13 +375,13 @@ export default function DirectorDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Pending Collections</p>
-                <p className="text-3xl font-bold text-gray-900">
+                <p className="text-sm font-medium text-muted-foreground">Pending Collections</p>
+                <p className="text-3xl font-bold text-foreground">
                   {formatCurrency(stats.totalPending)}
                 </p>
                 <p className="text-xs text-orange-600 mt-1">Requires attention</p>
               </div>
-              <div className="bg-orange-100 p-3 rounded-full">
+              <div className="bg-orange-500/10 p-3 rounded-full">
                 <span className="text-2xl">⏳</span>
               </div>
             </div>
@@ -373,7 +447,7 @@ export default function DirectorDashboard() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(entry: { status?: string; count?: number }) => `${entry.status}: ${entry.count}`}
+                  label={(props: { payload?: StatusData }) => props.payload ? `${props.payload.status}: ${props.payload.count}` : ''}
                   outerRadius={100}
                   fill="#8884d8"
                   dataKey="count"
@@ -410,15 +484,15 @@ export default function DirectorDashboard() {
 
       {/* Institutional KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+        <Card className="bg-chart-1/5 border-chart-1">
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-blue-800 mb-2">Document Compliance Rate</p>
-              <p className="text-4xl font-bold text-blue-900">{stats.documentCompliance.toFixed(1)}%</p>
-              <p className="text-xs text-blue-700 mt-2">Target: 95%</p>
-              <div className="w-full bg-blue-200 rounded-full h-2 mt-3">
+              <p className="text-sm font-medium text-chart-1 mb-2">Document Compliance Rate</p>
+              <p className="text-4xl font-bold text-foreground">{stats.documentCompliance.toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground mt-2">Target: 95%</p>
+              <div className="w-full bg-muted rounded-full h-2 mt-3">
                 <div 
-                  className="bg-blue-600 h-2 rounded-full" 
+                  className="bg-chart-1 h-2 rounded-full transition-all" 
                   style={{ width: `${stats.documentCompliance}%` }}
                 ></div>
               </div>
@@ -426,26 +500,26 @@ export default function DirectorDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+        <Card className="bg-chart-3/5 border-chart-3">
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-green-800 mb-2">Avg. Processing Time</p>
-              <p className="text-4xl font-bold text-green-900">{stats.averageProcessingDays.toFixed(0)}</p>
-              <p className="text-xs text-green-700 mt-2">days per application</p>
-              <p className="text-xs text-green-600 mt-1">
+              <p className="text-sm font-medium text-chart-3 mb-2">Avg. Processing Time</p>
+              <p className="text-4xl font-bold text-foreground">{stats.averageProcessingDays.toFixed(0)}</p>
+              <p className="text-xs text-muted-foreground mt-2">days per application</p>
+              <p className="text-xs text-chart-3 mt-1">
                 {stats.averageProcessingDays <= 7 ? '✅ Within target' : '⚠️ Needs improvement'}
               </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+        <Card className="bg-chart-2/5 border-chart-2">
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-purple-800 mb-2">Conversion Efficiency</p>
-              <p className="text-4xl font-bold text-purple-900">{stats.conversionRate.toFixed(1)}%</p>
-              <p className="text-xs text-purple-700 mt-2">Applications → Admissions</p>
-              <p className="text-xs text-purple-600 mt-1">
+              <p className="text-sm font-medium text-chart-2 mb-2">Conversion Efficiency</p>
+              <p className="text-4xl font-bold text-foreground">{stats.conversionRate.toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground mt-2">Applications → Admissions</p>
+              <p className="text-xs text-chart-2 mt-1">
                 {getConversionLabel(stats.conversionRate)}
               </p>
             </div>
@@ -462,60 +536,60 @@ export default function DirectorDashboard() {
           <CardContent>
             <div className="space-y-3">
               <Link href="/dashboard/students">
-                <button className="w-full text-left px-4 py-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 rounded-lg transition-all border border-blue-200">
+                <button className="w-full text-left px-4 py-3 bg-chart-1/5 hover:bg-chart-1/10 rounded-lg transition-all border border-chart-1/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-blue-900">👥 View All Students</p>
-                      <p className="text-xs text-blue-700">Complete student database</p>
+                      <p className="font-semibold text-foreground">👥 View All Students</p>
+                      <p className="text-xs text-muted-foreground">Complete student database</p>
                     </div>
-                    <span className="text-blue-600">→</span>
+                    <span className="text-chart-1">→</span>
                   </div>
                 </button>
               </Link>
               
               <Link href="/dashboard/applications">
-                <button className="w-full text-left px-4 py-3 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 rounded-lg transition-all border border-green-200">
+                <button className="w-full text-left px-4 py-3 bg-chart-3/5 hover:bg-chart-3/10 rounded-lg transition-all border border-chart-3/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-green-900">📝 Review Applications</p>
-                      <p className="text-xs text-green-700">Admission pipeline overview</p>
+                      <p className="font-semibold text-foreground">📝 Review Applications</p>
+                      <p className="text-xs text-muted-foreground">Admission pipeline overview</p>
                     </div>
-                    <span className="text-green-600">→</span>
+                    <span className="text-chart-3">→</span>
                   </div>
                 </button>
               </Link>
               
               <Link href="/dashboard/documents">
-                <button className="w-full text-left px-4 py-3 bg-gradient-to-r from-yellow-50 to-yellow-100 hover:from-yellow-100 hover:to-yellow-200 rounded-lg transition-all border border-yellow-200">
+                <button className="w-full text-left px-4 py-3 bg-orange-500/5 hover:bg-orange-500/10 rounded-lg transition-all border border-orange-500/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-yellow-900">📄 Document Compliance</p>
-                      <p className="text-xs text-yellow-700">Track documentation status</p>
+                      <p className="font-semibold text-foreground">📄 Document Compliance</p>
+                      <p className="text-xs text-muted-foreground">Track documentation status</p>
                     </div>
-                    <span className="text-yellow-600">→</span>
+                    <span className="text-orange-600">→</span>
                   </div>
                 </button>
               </Link>
               
               <Link href="/dashboard/payments">
-                <button className="w-full text-left px-4 py-3 bg-gradient-to-r from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 rounded-lg transition-all border border-purple-200">
+                <button className="w-full text-left px-4 py-3 bg-chart-2/5 hover:bg-chart-2/10 rounded-lg transition-all border border-chart-2/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-purple-900">💰 Financial Reports</p>
-                      <p className="text-xs text-purple-700">Revenue and collections</p>
+                      <p className="font-semibold text-foreground">💰 Financial Reports</p>
+                      <p className="text-xs text-muted-foreground">Revenue and collections</p>
                     </div>
-                    <span className="text-purple-600">→</span>
+                    <span className="text-chart-2">→</span>
                   </div>
                 </button>
               </Link>
 
-              <button className="w-full text-left px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 rounded-lg transition-all border border-gray-300 opacity-60 cursor-not-allowed" disabled>
+              <button className="w-full text-left px-4 py-3 bg-muted/50 rounded-lg border border-border opacity-60 cursor-not-allowed" disabled>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-gray-700">📜 Audit Logs</p>
-                    <p className="text-xs text-gray-600">Coming soon - System audit trail</p>
+                    <p className="font-semibold text-foreground">📜 Audit Logs</p>
+                    <p className="text-xs text-muted-foreground">Coming soon - System audit trail</p>
                   </div>
-                  <span className="text-gray-500">🔒</span>
+                  <span className="text-muted-foreground">🔒</span>
                 </div>
               </button>
             </div>
@@ -530,16 +604,16 @@ export default function DirectorDashboard() {
           <CardContent>
             <div className="space-y-3">
               {coursePerformance.slice(0, 5).map((course) => (
-                <div key={course.fullName} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div key={course.fullName} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border">
                   <div className="flex-1">
-                    <p className="font-semibold text-gray-900 text-sm" title={course.fullName}>{course.course}</p>
-                    <p className="text-xs text-gray-600">
+                    <p className="font-semibold text-foreground text-sm" title={course.fullName}>{course.course}</p>
+                    <p className="text-xs text-muted-foreground">
                       {course.applications} applications • {course.admitted} admitted
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-purple-600">{formatCurrency(course.revenue * 1000)}</p>
-                    <p className="text-xs text-gray-600">{course.conversionRate.toFixed(0)}% conversion</p>
+                    <p className="font-bold text-chart-2">{formatCurrency(course.revenue * 1000)}</p>
+                    <p className="text-xs text-muted-foreground">{course.conversionRate.toFixed(0)}% conversion</p>
                   </div>
                 </div>
               ))}
@@ -549,31 +623,31 @@ export default function DirectorDashboard() {
       </div>
 
       {/* System Health Indicators */}
-      <Card className="border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+      <Card className="border-2 border-chart-2/20 bg-chart-2/5">
         <CardHeader>
           <CardTitle>🔍 System Health & Compliance</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+            <div className="text-center p-4 bg-background rounded-lg shadow-sm border border-border">
               <p className="text-2xl mb-2">✅</p>
-              <p className="text-sm font-semibold text-gray-700">Data Integrity</p>
-              <p className="text-xs text-green-600">100% Verified</p>
+              <p className="text-sm font-semibold text-foreground">Data Integrity</p>
+              <p className="text-xs text-chart-3">100% Verified</p>
             </div>
-            <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+            <div className="text-center p-4 bg-background rounded-lg shadow-sm border border-border">
               <p className="text-2xl mb-2">🔒</p>
-              <p className="text-sm font-semibold text-gray-700">Security Status</p>
-              <p className="text-xs text-green-600">All systems secure</p>
+              <p className="text-sm font-semibold text-foreground">Security Status</p>
+              <p className="text-xs text-chart-3">All systems secure</p>
             </div>
-            <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+            <div className="text-center p-4 bg-background rounded-lg shadow-sm border border-border">
               <p className="text-2xl mb-2">📊</p>
-              <p className="text-sm font-semibold text-gray-700">Reporting</p>
-              <p className="text-xs text-blue-600">Up to date</p>
+              <p className="text-sm font-semibold text-foreground">Reporting</p>
+              <p className="text-xs text-chart-1">Up to date</p>
             </div>
-            <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+            <div className="text-center p-4 bg-background rounded-lg shadow-sm border border-border">
               <p className="text-2xl mb-2">⚡</p>
-              <p className="text-sm font-semibold text-gray-700">System Performance</p>
-              <p className="text-xs text-green-600">Optimal</p>
+              <p className="text-sm font-semibold text-foreground">System Performance</p>
+              <p className="text-xs text-chart-3">Optimal</p>
             </div>
           </div>
         </CardContent>

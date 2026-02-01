@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface Application {
-  id: string;
+  student_id: string;
   application_number: string;
   full_name: string;
   email: string;
@@ -94,7 +94,6 @@ export default function ApplicationsPage() {
       'FEE_PENDING': 'bg-orange-100 text-orange-800',
       'FEE_PARTIAL': 'bg-purple-100 text-purple-800',
       'FEE_RECEIVED': 'bg-emerald-100 text-emerald-800',
-      'ADMITTED': 'bg-green-600 text-white',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
@@ -110,7 +109,7 @@ export default function ApplicationsPage() {
     new: applications.filter(app => app.status === 'APPLICATION_ENTERED').length,
     documentsIncomplete: applications.filter(app => app.status === 'DOCUMENTS_INCOMPLETE').length,
     feePending: applications.filter(app => app.status === 'FEE_PENDING').length,
-    admitted: applications.filter(app => app.status === 'ADMITTED').length,
+    feeReceived: applications.filter(app => app.status === 'FEE_RECEIVED').length,
   };
 
   if (!user) return null;
@@ -182,8 +181,8 @@ export default function ApplicationsPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <p className="text-3xl font-bold text-green-600">{stats.admitted}</p>
-                <p className="text-sm text-gray-600 mt-1">Admitted</p>
+                <p className="text-3xl font-bold text-emerald-600">{stats.feeReceived}</p>
+                <p className="text-sm text-gray-600 mt-1">Fees Received</p>
               </div>
             </CardContent>
           </Card>
@@ -225,8 +224,7 @@ export default function ApplicationsPage() {
                   <option value="DOCUMENTS_INCOMPLETE">Documents Incomplete</option>
                   <option value="FEE_PENDING">Fee Pending</option>
                   <option value="FEE_PARTIAL">Partial Payment</option>
-                  <option value="FEE_RECEIVED">Fee Received</option>
-                  <option value="ADMITTED">Admitted</option>
+                  <option value="FEE_RECEIVED">Fee Received (Final)</option>
                 </select>
               </div>
 
@@ -274,8 +272,8 @@ export default function ApplicationsPage() {
               <div className="space-y-3">
                 {filteredApplications.map((app) => (
                   <Link
-                    key={app.id}
-                    href={`/dashboard/students/${app.id}`}
+                    key={app.student_id}
+                    href={`/dashboard/students/${app.student_id}`}
                     className="block p-4 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all"
                   >
                     <div className="flex items-center justify-between">

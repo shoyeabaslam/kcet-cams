@@ -14,8 +14,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const course = searchParams.get('course');
+    const academicYear = searchParams.get('academicYear');
+    const paymentStatus = searchParams.get('paymentStatus');
     const search = searchParams.get('search');
-    const limit = Number.parseInt(searchParams.get('limit') || '50');
+    const limit = Number.parseInt(searchParams.get('limit') || '100');
     const offset = Number.parseInt(searchParams.get('offset') || '0');
 
     let query = `
@@ -64,10 +66,23 @@ export async function GET(request: NextRequest) {
       paramIndex++;
     }
 
+    if (academicYear) {
+      query += ` AND ay.id = $${paramIndex}`;
+      params.push(academicYear);
+      paramIndex++;
+    }
+
+    if (paymentStatus) {
+      query += ` AND sfs.fee_status = $${paramIndex}`;
+      params.push(paymentStatus);
+      paramIndex++;
+    }
+
     if (search) {
       query += ` AND (
         s.full_name ILIKE $${paramIndex} OR 
         s.email ILIKE $${paramIndex} OR
+        s.phone ILIKE $${paramIndex} OR
         s.application_number ILIKE $${paramIndex}
       )`;
       params.push(`%${search}%`);
@@ -100,10 +115,27 @@ export async function GET(request: NextRequest) {
       countParamIndex++;
     }
 
+    if (academicYear) {
+      countQuery += ` AND s.academic_year_id = $${countParamIndex}`;
+      countParams.push(academicYear);
+      countParamIndex++;
+    }
+
+    if (paymentStatus) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM student_fee_summary sfs 
+        WHERE sfs.student_id = s.id 
+        AND sfs.fee_status = $${countParamIndex}
+      )`;
+      countParams.push(paymentStatus);
+      countParamIndex++;
+    }
+
     if (search) {
       countQuery += ` AND (
         s.full_name ILIKE $${countParamIndex} OR 
         s.email ILIKE $${countParamIndex} OR
+        s.phone ILIKE $${countParamIndex} OR
         s.application_number ILIKE $${countParamIndex}
       )`;
       countParams.push(`%${search}%`);

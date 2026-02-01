@@ -7,11 +7,26 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Course {
-  course_id: string;
+  id: string;
   course_name: string;
   course_code: string;
-  offering_id: string;
-  total_seats: number;
+}
+
+interface AcademicYear {
+  id: number;
+  year_label: string;
+  is_active: boolean;
+}
+
+interface CourseOffering {
+  id: string;
+  course_id: string;
+  academic_year_id: number;
+  course_name: string;
+  course_code: string;
+  year_label: string;
+  enrolled_count: number;
+  intake_capacity: number;
 }
 
 export default function NewStudentPage() {
@@ -19,6 +34,9 @@ export default function NewStudentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [courseOfferings, setCourseOfferings] = useState<CourseOffering[]>([]);
+  const [filteredOfferings, setFilteredOfferings] = useState<CourseOffering[]>([]);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
@@ -32,22 +50,55 @@ export default function NewStudentPage() {
     previousSchool: '',
     previousBoard: '',
     previousPercentage: '',
+    academicYearId: '',
+    courseId: '',
     courseOfferingId: '',
   });
 
   useEffect(() => {
-    fetchCourses();
+    fetchData();
   }, []);
 
-  const fetchCourses = async () => {
+  useEffect(() => {
+    // Filter course offerings based on selected academic year and course
+    if (formData.academicYearId && formData.courseId) {
+      const filtered = courseOfferings.filter(
+        (co) => co.academic_year_id === Number(formData.academicYearId) && co.course_id === formData.courseId
+      );
+      setFilteredOfferings(filtered);
+      if (filtered.length > 0) {
+        setFormData((prev) => ({ ...prev, courseOfferingId: filtered[0].id }));
+      }
+    } else {
+      setFilteredOfferings([]);
+      setFormData((prev) => ({ ...prev, courseOfferingId: '' }));
+    }
+  }, [formData.academicYearId, formData.courseId, courseOfferings]);
+
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/courses?includeOfferings=true');
-      if (response.ok) {
-        const data = await response.json();
-        setCourses(data.courses.filter((c: Course) => c.offering_id));
+      // Fetch courses
+      const coursesRes = await fetch('/api/courses');
+      if (coursesRes.ok) {
+        const coursesData = await coursesRes.json();
+        setCourses(coursesData.courses || []);
+      }
+
+      // Fetch academic years
+      const ayRes = await fetch('/api/academic-years');
+      if (ayRes.ok) {
+        const ayData = await ayRes.json();
+        setAcademicYears(ayData.academicYears || []);
+      }
+
+      // Fetch course offerings
+      const coRes = await fetch('/api/course-offerings?isOpen=true');
+      if (coRes.ok) {
+        const coData = await coRes.json();
+        setCourseOfferings(coData.courseOfferings || []);
       }
     } catch (error) {
-      console.error('Failed to fetch courses:', error);
+      console.error('Failed to fetch data:', error);
     }
   };
 
@@ -92,8 +143,11 @@ export default function NewStudentPage() {
     return (
       <DashboardLayout>
         <div className="text-center py-12">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
-          <p className="text-gray-600">You don't have permission to add students.</p>
+          <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl text-destructive">⚠️</span>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground mb-4">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have permission to add students.</p>
         </div>
       </DashboardLayout>
     );
@@ -104,8 +158,8 @@ export default function NewStudentPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Add New Student</h1>
-          <p className="text-gray-600 mt-1">Create a new student application entry</p>
+          <h1 className="text-3xl font-bold text-foreground">Add New Student</h1>
+          <p className="text-muted-foreground mt-1">Create a new student application entry</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -117,8 +171,8 @@ export default function NewStudentPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name <span className="text-red-500">*</span>
+                <label htmlFor="fullName" className="block text-sm font-medium text-foreground mb-2">
+                  Full Name <span className="text-destructive">*</span>
                 </label>
                 <input
                   id="fullName"
@@ -128,14 +182,14 @@ export default function NewStudentPage() {
                   value={formData.fullName}
                   onChange={handleChange}
                   placeholder="Enter student's full name"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-input rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700 mb-2">
-                    Date of Birth <span className="text-red-500">*</span>
+                  <label htmlFor="dateOfBirth" className="block text-sm font-medium text-foreground mb-2">
+                    Date of Birth <span className="text-destructive">*</span>
                   </label>
                   <input
                     id="dateOfBirth"
@@ -144,12 +198,12 @@ export default function NewStudentPage() {
                     required
                     value={formData.dateOfBirth}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
                 <div>
-                  <label htmlFor="gender" className="block text-sm font-medium text-gray-700 mb-2">
-                    Gender <span className="text-red-500">*</span>
+                  <label htmlFor="gender" className="block text-sm font-medium text-foreground mb-2">
+                    Gender <span className="text-destructive">*</span>
                   </label>
                   <select
                     id="gender"
@@ -157,7 +211,7 @@ export default function NewStudentPage() {
                     required
                     value={formData.gender}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   >
                     <option value="">Select Gender</option>
                     <option value="Male">Male</option>
@@ -166,8 +220,8 @@ export default function NewStudentPage() {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
-                    Category <span className="text-red-500">*</span>
+                  <label htmlFor="category" className="block text-sm font-medium text-foreground mb-2">
+                    Category <span className="text-destructive">*</span>
                   </label>
                   <select
                     id="category"
@@ -175,7 +229,7 @@ export default function NewStudentPage() {
                     required
                     value={formData.category}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   >
                     <option value="General">General</option>
                     <option value="OBC">OBC</option>
@@ -196,8 +250,8 @@ export default function NewStudentPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                    Email <span className="text-red-500">*</span>
+                  <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
+                    Email <span className="text-destructive">*</span>
                   </label>
                   <input
                     id="email"
@@ -206,12 +260,12 @@ export default function NewStudentPage() {
                     required
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone <span className="text-red-500">*</span>
+                  <label htmlFor="phone" className="block text-sm font-medium text-foreground mb-2">
+                    Phone <span className="text-destructive">*</span>
                   </label>
                   <input
                     id="phone"
@@ -220,14 +274,14 @@ export default function NewStudentPage() {
                     required
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-2">
-                  Address <span className="text-red-500">*</span>
+                <label htmlFor="address" className="block text-sm font-medium text-foreground mb-2">
+                  Address <span className="text-destructive">*</span>
                 </label>
                 <textarea
                   id="address"
@@ -236,7 +290,7 @@ export default function NewStudentPage() {
                   rows={3}
                   value={formData.address}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                 />
               </div>
             </CardContent>
@@ -251,7 +305,7 @@ export default function NewStudentPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="previousSchool" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="previousSchool" className="block text-sm font-medium text-foreground mb-2">
                     Previous School
                   </label>
                   <input
@@ -260,11 +314,11 @@ export default function NewStudentPage() {
                     name="previousSchool"
                     value={formData.previousSchool}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
                 <div>
-                  <label htmlFor="previousBoard" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="previousBoard" className="block text-sm font-medium text-foreground mb-2">
                     Board
                   </label>
                   <input
@@ -274,11 +328,11 @@ export default function NewStudentPage() {
                     value={formData.previousBoard}
                     onChange={handleChange}
                     placeholder="e.g., CBSE, JKBOSE"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
                 <div>
-                  <label htmlFor="previousPercentage" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="previousPercentage" className="block text-sm font-medium text-foreground mb-2">
                     Percentage
                   </label>
                   <input
@@ -291,7 +345,7 @@ export default function NewStudentPage() {
                     value={formData.previousPercentage}
                     onChange={handleChange}
                     placeholder="85.5"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
                   />
                 </div>
               </div>
@@ -302,36 +356,76 @@ export default function NewStudentPage() {
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>Course Selection</CardTitle>
-              <CardDescription>Choose the course for admission</CardDescription>
+              <CardDescription>Choose the academic year and course for admission</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div>
-                <label htmlFor="courseOfferingId" className="block text-sm font-medium text-gray-700 mb-2">
-                  Course <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="courseOfferingId"
-                  name="courseOfferingId"
-                  required
-                  value={formData.courseOfferingId}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Course</option>
-                  {courses.map((course) => (
-                    <option key={course.offering_id} value={course.offering_id}>
-                      {course.course_name} ({course.course_code}) - {course.total_seats} seats
-                    </option>
-                  ))}
-                </select>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="academicYearId" className="block text-sm font-medium text-foreground mb-2">
+                    Academic Year <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    id="academicYearId"
+                    name="academicYearId"
+                    required
+                    value={formData.academicYearId}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
+                  >
+                    <option value="">Select Academic Year</option>
+                    {academicYears.map((ay) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.year_label} {ay.is_active && '(Active)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="courseId" className="block text-sm font-medium text-foreground mb-2">
+                    Course <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    id="courseId"
+                    name="courseId"
+                    required
+                    value={formData.courseId}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors"
+                  >
+                    <option value="">Select Course</option>
+                    {courses.map((course) => (
+                      <option key={course.id} value={course.id}>
+                        {course.course_name} ({course.course_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              
+              {/* Show availability info */}
+              {filteredOfferings.length > 0 && (
+                <div className="bg-chart-1/10 border border-chart-1/20 rounded-lg p-4">
+                  <p className="text-sm text-chart-1">
+                    <span className="font-medium">Seats Available:</span>{' '}
+                    {filteredOfferings[0].intake_capacity - filteredOfferings[0].enrolled_count} out of {filteredOfferings[0].intake_capacity}
+                  </p>
+                </div>
+              )}
+              
+              {formData.academicYearId && formData.courseId && filteredOfferings.length === 0 && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                  <p className="text-sm text-destructive">
+                    This course is not available for the selected academic year. Please contact the admin to create a course offering.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Error Message */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800 text-sm">{error}</p>
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 mb-6">
+              <p className="text-destructive text-sm">{error}</p>
             </div>
           )}
 
@@ -340,14 +434,14 @@ export default function NewStudentPage() {
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              className="px-6 py-2 border border-input rounded-lg text-foreground hover:bg-accent transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating...' : 'Create Student'}
             </button>

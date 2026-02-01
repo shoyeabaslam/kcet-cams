@@ -74,43 +74,49 @@ export default function AccountsOfficerDashboard() {
       const studentsWithFees: Student[] = [];
 
       students.forEach((student: any) => {
-        const totalFee = student.total_fee || 0;
-        const paidAmount = student.paid_amount || 0;
+        // Safely parse numbers, defaulting to 0 if null/undefined/NaN
+        const totalFee = Number(student.total_fee) || 0;
+        const paidAmount = Number(student.paid_amount) || 0;
         const balance = totalFee - paidAmount;
 
-        totalFeesCollectible += totalFee;
-        totalCollected += paidAmount;
-
-        // Determine fee status - use student.status if it's fee-related
-        let feeStatus = 'FEE_RECEIVED';
-        if (student.status === 'FEE_PENDING' || student.status === 'FEE_PARTIAL') {
-          feeStatus = student.status;
-        } else if (balance > 0) {
-          feeStatus = balance === totalFee ? 'FEE_PENDING' : 'FEE_PARTIAL';
+        // Only include students with fee structures in calculations
+        if (student.total_fee !== null && student.total_fee !== undefined) {
+          totalFeesCollectible += totalFee;
+          totalCollected += paidAmount;
         }
 
-        // Count by fee status
-        if (feeStatus === 'FEE_PENDING') {
-          feePendingCount++;
-        } else if (feeStatus === 'FEE_PARTIAL') {
-          feePartialCount++;
-        } else if (feeStatus === 'FEE_RECEIVED') {
-          feeReceivedCount++;
-        }
+        // Determine fee status - only for students with fee structures
+        if (student.total_fee !== null && student.total_fee !== undefined) {
+          let feeStatus = 'FEE_RECEIVED';
+          if (student.status === 'FEE_PENDING' || student.status === 'FEE_PARTIAL' || student.status === 'FEE_RECEIVED') {
+            feeStatus = student.status;
+          } else if (balance > 0) {
+            feeStatus = balance === totalFee ? 'FEE_PENDING' : 'FEE_PARTIAL';
+          }
 
-        // Add students with pending/partial payments (use status from database)
-        if (feeStatus === 'FEE_PENDING' || feeStatus === 'FEE_PARTIAL') {
-          studentsWithFees.push({
-            student_id: student.student_id || student.id,
-            full_name: student.full_name,
-            application_number: student.application_number,
-            course_name: student.course_name || 'N/A',
-            status: student.status,
-            total_fee: totalFee,
-            total_paid: paidAmount,
-            balance: balance,
-            fee_status: feeStatus,
-          });
+          // Count by fee status
+          if (feeStatus === 'FEE_PENDING') {
+            feePendingCount++;
+          } else if (feeStatus === 'FEE_PARTIAL') {
+            feePartialCount++;
+          } else if (feeStatus === 'FEE_RECEIVED') {
+            feeReceivedCount++;
+          }
+
+          // Add students with pending/partial payments
+          if (feeStatus === 'FEE_PENDING' || feeStatus === 'FEE_PARTIAL') {
+            studentsWithFees.push({
+              student_id: student.student_id || student.id,
+              full_name: student.full_name,
+              application_number: student.application_number,
+              course_name: student.course_name || 'N/A',
+              status: student.status,
+              total_fee: totalFee,
+              total_paid: paidAmount,
+              balance: balance,
+              fee_status: feeStatus,
+            });
+          }
         }
       });
 
@@ -152,7 +158,7 @@ export default function AccountsOfficerDashboard() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading dashboard...</p>
+          <p className="text-muted-foreground">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -162,8 +168,8 @@ export default function AccountsOfficerDashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Fee Management Dashboard</h1>
-        <p className="text-gray-600 mt-1">Overview of fee collections and pending payments</p>
+        <h1 className="text-3xl font-bold text-foreground">Fee Management Dashboard</h1>
+        <p className="text-muted-foreground mt-1">Overview of fee collections and pending payments</p>
       </div>
 
       {/* Stats Grid */}
@@ -172,9 +178,9 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Collectible</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(stats.totalFeesCollectible)}
+                <p className="text-sm text-muted-foreground">Total Collectible</p>
+                <p className="text-2xl font-bold text-foreground mt-1">
+                  {formatCurrency(Number.isFinite(stats.totalFeesCollectible) ? stats.totalFeesCollectible : 0)}
                 </p>
               </div>
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -188,9 +194,9 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Collected</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {formatCurrency(stats.totalCollected)}
+                <p className="text-sm text-muted-foreground">Total Collected</p>
+                <p className="text-2xl font-bold text-chart-3 mt-1">
+                  {formatCurrency(Number.isFinite(stats.totalCollected) ? stats.totalCollected : 0)}
                 </p>
               </div>
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
@@ -204,9 +210,9 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Pending Amount</p>
+                <p className="text-sm text-muted-foreground">Pending Amount</p>
                 <p className="text-2xl font-bold text-red-600 mt-1">
-                  {formatCurrency(stats.pendingAmount)}
+                  {formatCurrency(Number.isFinite(stats.pendingAmount) ? stats.pendingAmount : 0)}
                 </p>
               </div>
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
@@ -220,9 +226,9 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Collection Rate</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">
-                  {stats.totalFeesCollectible > 0 
+                <p className="text-sm text-muted-foreground">Collection Rate</p>
+                <p className="text-2xl font-bold text-chart-1 mt-1">
+                  {stats.totalFeesCollectible > 0 && Number.isFinite(stats.totalCollected) && Number.isFinite(stats.totalFeesCollectible)
                     ? Math.round((stats.totalCollected / stats.totalFeesCollectible) * 100) 
                     : 0}%
                 </p>
@@ -241,8 +247,8 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-4xl font-bold text-red-600">{stats.feePendingCount}</p>
-              <p className="text-sm text-gray-600 mt-2">Fee Pending</p>
-              <p className="text-xs text-gray-500 mt-1">No payment received</p>
+              <p className="text-sm text-muted-foreground mt-2">Fee Pending</p>
+              <p className="text-xs text-muted-foreground mt-1">No payment received</p>
             </div>
           </CardContent>
         </Card>
@@ -251,8 +257,8 @@ export default function AccountsOfficerDashboard() {
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-4xl font-bold text-orange-600">{stats.feePartialCount}</p>
-              <p className="text-sm text-gray-600 mt-2">Partial Payment</p>
-              <p className="text-xs text-gray-500 mt-1">Balance remaining</p>
+              <p className="text-sm text-muted-foreground mt-2">Partial Payment</p>
+              <p className="text-xs text-muted-foreground mt-1">Balance remaining</p>
             </div>
           </CardContent>
         </Card>
@@ -260,9 +266,9 @@ export default function AccountsOfficerDashboard() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-4xl font-bold text-green-600">{stats.feeReceivedCount}</p>
-              <p className="text-sm text-gray-600 mt-2">Fully Paid</p>
-              <p className="text-xs text-gray-500 mt-1">No balance</p>
+              <p className="text-4xl font-bold text-chart-3">{stats.feeReceivedCount}</p>
+              <p className="text-sm text-muted-foreground mt-2">Fully Paid</p>
+              <p className="text-xs text-muted-foreground mt-1">No balance</p>
             </div>
           </CardContent>
         </Card>
@@ -278,7 +284,7 @@ export default function AccountsOfficerDashboard() {
             </div>
             <Link
               href="/dashboard/fees"
-              className="px-4 py-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors text-sm font-medium"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors text-sm font-medium"
             >
               View All
             </Link>
@@ -287,7 +293,7 @@ export default function AccountsOfficerDashboard() {
         <CardContent>
           {pendingStudents.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-600">🎉 No pending payments! All students have paid their fees.</p>
+              <p className="text-muted-foreground">🎉 No pending payments! All students have paid their fees.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -295,12 +301,12 @@ export default function AccountsOfficerDashboard() {
                 <Link
                   key={student.student_id}
                   href={`/dashboard/students/${student.student_id}?tab=payments`}
-                  className="block p-4 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all"
+                  className="block p-4 border border-border rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
-                        <p className="font-semibold text-gray-900">{student.full_name}</p>
+                        <p className="font-semibold text-foreground">{student.full_name}</p>
                         <span className={`px-3 py-1 text-xs font-medium rounded-full ${
                           student.fee_status === 'FEE_PENDING' 
                             ? 'bg-red-100 text-red-800' 
@@ -309,21 +315,21 @@ export default function AccountsOfficerDashboard() {
                           {student.fee_status.replace('_', ' ')}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <span className="font-mono">{student.application_number}</span>
                         <span>{student.course_name}</span>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-gray-600">Total Fee</p>
-                      <p className="text-lg font-semibold text-gray-900">{formatCurrency(student.total_fee)}</p>
+                      <p className="text-sm text-muted-foreground">Total Fee</p>
+                      <p className="text-lg font-semibold text-foreground">{formatCurrency(student.total_fee)}</p>
                       <p className="text-sm text-red-600">Balance: {formatCurrency(student.balance)}</p>
                     </div>
                   </div>
                 </Link>
               ))}
               {pendingStudents.length > 5 && (
-                <p className="text-center text-sm text-gray-500 pt-2">
+                <p className="text-center text-sm text-muted-foreground pt-2">
                   + {pendingStudents.length - 5} more students with pending payments
                 </p>
               )}
@@ -336,7 +342,7 @@ export default function AccountsOfficerDashboard() {
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="pt-6">
           <div className="flex gap-3">
-            <svg className="w-6 h-6 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-6 h-6 text-chart-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="text-sm text-blue-900">

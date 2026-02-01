@@ -64,6 +64,21 @@ interface StatusHistory {
   changed_by_name: string;
 }
 
+interface FeeAdjustment {
+  id: string;
+  student_id: string;
+  original_fee: number;
+  adjusted_fee: number;
+  discount_amount: number;
+  discount_percentage: number;
+  adjustment_reason: string;
+  director_approval_note: string | null;
+  applied_by: string;
+  applied_by_name: string;
+  applied_at: string;
+  is_active: boolean;
+}
+
 type TabType = 'overview' | 'documents' | 'payments' | 'history';
 
 export default function StudentDetailPage({ params, searchParams }: { 
@@ -76,6 +91,7 @@ export default function StudentDetailPage({ params, searchParams }: {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [history, setHistory] = useState<StatusHistory[]>([]);
+  const [feeAdjustment, setFeeAdjustment] = useState<FeeAdjustment | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [studentId, setStudentId] = useState<string>('');
@@ -91,6 +107,15 @@ export default function StudentDetailPage({ params, searchParams }: {
     notes: '',
   });
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Fee adjustment form state
+  const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const [adjustmentData, setAdjustmentData] = useState({
+    adjusted_fee: '',
+    adjustment_reason: '',
+    director_approval_note: '',
+  });
+  const [adjustmentLoading, setAdjustmentLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([params, searchParams]).then(([resolvedParams, resolvedSearchParams]) => {
@@ -113,10 +138,25 @@ export default function StudentDetailPage({ params, searchParams }: {
       setDocuments(data.documents || []);
       setPayments(data.payments || []);
       setHistory(data.statusHistory || []); // Fixed: was data.history
+      
+      // Fetch fee adjustment if exists
+      fetchFeeAdjustment(id);
     } catch (error) {
       console.error('Error fetching student details:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFeeAdjustment = async (id: string) => {
+    try {
+      const response = await fetch(`/api/students/${id}/fee-adjustment`);
+      if (response.ok) {
+        const data = await response.json();
+        setFeeAdjustment(data.adjustment);
+      }
+    } catch (error) {
+      console.error('Error fetching fee adjustment:', error);
     }
   };
 
@@ -170,7 +210,7 @@ export default function StudentDetailPage({ params, searchParams }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...paymentData,
-          amount_paid: parseFloat(paymentData.amount_paid),
+          amount_paid: Number.parseFloat(paymentData.amount_paid),
         }),
       });
 
@@ -195,6 +235,62 @@ export default function StudentDetailPage({ params, searchParams }: {
       alert(error instanceof Error ? error.message : 'Failed to record payment');
     } finally {
       setPaymentLoading(false);
+    }
+  };
+
+  const handleAdjustmentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validation
+    if (!adjustmentData.adjusted_fee || !adjustmentData.adjustment_reason.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    const adjustedFee = Number.parseFloat(adjustmentData.adjusted_fee);
+    if (Number.isNaN(adjustedFee) || adjustedFee < 0) {
+      alert('Please enter a valid adjusted fee amount');
+      return;
+    }
+
+    if (student && adjustedFee >= student.total_fee) {
+      alert('Adjusted fee must be less than original fee');
+      return;
+    }
+
+    setAdjustmentLoading(true);
+
+    try {
+      const response = await fetch(`/api/students/${studentId}/fee-adjustment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adjusted_fee: adjustedFee,
+          adjustment_reason: adjustmentData.adjustment_reason.trim(),
+          director_approval_note: adjustmentData.director_approval_note.trim() || null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to apply fee adjustment');
+      }
+
+      // Reset form and refresh data
+      setShowAdjustmentForm(false);
+      setAdjustmentData({
+        adjusted_fee: '',
+        adjustment_reason: '',
+        director_approval_note: '',
+      });
+      alert('Fee discount applied successfully!');
+      fetchStudentDetails(studentId);
+    } catch (error) {
+      console.error('Error applying fee adjustment:', error);
+      alert(error instanceof Error ? error.message : 'Failed to apply fee adjustment');
+    } finally {
+      setAdjustmentLoading(false);
     }
   };
 
@@ -379,16 +475,74 @@ export default function StudentDetailPage({ params, searchParams }: {
 
             {/* Fee Summary */}
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Fee Summary</CardTitle>
+                {canRecordPayments && !feeAdjustment && student.paid_amount === 0 && (
+                  <button
+                    onClick={() => setShowAdjustmentForm(true)}
+                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    💰 Apply Discount
+                  </button>
+                )}
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
+                {/* Discount Badge */}
+                {feeAdjustment && (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">🎉</span>
+                        <div>
+                          <p className="text-sm font-semibold text-purple-900">Fee Discount Applied</p>
+                          <p className="text-xs text-purple-700">
+                            {feeAdjustment.discount_percentage.toFixed(1)}% discount • 
+                            Saved ₹{feeAdjustment.discount_amount.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-600">Original Fee</p>
+                        <p className="text-sm text-gray-500 line-through">
+                          ₹{feeAdjustment.original_fee.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Discount Reason */}
+                    <div className="border-t border-purple-200 pt-2">
+                      <p className="text-xs font-medium text-purple-900 mb-1">Reason:</p>
+                      <p className="text-sm text-gray-700">{feeAdjustment.adjustment_reason}</p>
+                    </div>
+
+                    {/* Director Approval Note */}
+                    {feeAdjustment.director_approval_note && (
+                      <div className="border-t border-purple-200 pt-2">
+                        <p className="text-xs font-medium text-purple-900 mb-1">Director Approval:</p>
+                        <p className="text-sm text-gray-700">{feeAdjustment.director_approval_note}</p>
+                      </div>
+                    )}
+
+                    {/* Applied By */}
+                    <div className="border-t border-purple-200 pt-2 flex justify-between text-xs text-gray-600">
+                      <span>Applied by: {feeAdjustment.applied_by_name}</span>
+                      <span>{new Date(feeAdjustment.applied_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Fee Amounts */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-600">Total Fee</label>
                     <p className="text-2xl font-bold text-gray-900">
                       ₹{student.total_fee?.toLocaleString() || '0'}
                     </p>
+                    {feeAdjustment && (
+                      <p className="text-xs text-green-600 font-medium">
+                        ✓ After {feeAdjustment.discount_percentage.toFixed(0)}% discount
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Amount Paid</label>
@@ -735,6 +889,204 @@ export default function StudentDetailPage({ params, searchParams }: {
           </Card>
         )}
       </div>
+
+      {/* Fee Adjustment Modal */}
+      {showAdjustmentForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Apply Fee Discount</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Director-approved fee adjustment for {student?.full_name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAdjustmentForm(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleAdjustmentSubmit} className="p-6 space-y-6">
+              {/* Visual Flow: Before → After */}
+              <div className="bg-gradient-to-r from-red-50 via-yellow-50 to-green-50 border-2 border-dashed border-gray-300 rounded-xl p-6">
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  {/* Original Fee */}
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">
+                      📋 Original Fee
+                    </p>
+                    <div className="bg-red-100 border-2 border-red-300 rounded-lg p-4">
+                      <p className="text-2xl font-bold text-red-800">
+                        ₹{student?.total_fee?.toLocaleString() || '0'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="text-center">
+                    <div className="flex items-center justify-center">
+                      <div className="text-4xl text-gray-400">→</div>
+                    </div>
+                    {adjustmentData.adjusted_fee && student?.total_fee && (
+                      <div className="mt-2 bg-yellow-100 border border-yellow-300 rounded px-3 py-1">
+                        <p className="text-xs font-medium text-yellow-800">
+                          -₹{(student.total_fee - Number.parseFloat(adjustmentData.adjusted_fee)).toLocaleString()}
+                        </p>
+                        <p className="text-[10px] text-yellow-700">
+                          ({((student.total_fee - Number.parseFloat(adjustmentData.adjusted_fee)) / student.total_fee * 100).toFixed(1)}% off)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* New Fee (Editable) */}
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">
+                      ✏️ Edit New Fee
+                    </p>
+                    <div className="bg-green-100 border-2 border-green-300 rounded-lg p-3">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-800 font-bold">₹</span>
+                        <input
+                          id="adjusted-fee"
+                          type="number"
+                          required
+                          min="0"
+                          max={student?.total_fee || 0}
+                          step="0.01"
+                          value={adjustmentData.adjusted_fee}
+                          onChange={(e) => setAdjustmentData({ ...adjustmentData, adjusted_fee: e.target.value })}
+                          className="w-full pl-8 pr-2 py-2 text-2xl font-bold text-green-800 bg-white border-2 border-green-400 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-center"
+                          placeholder={student?.total_fee?.toString() || '0'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Savings Badge */}
+                {adjustmentData.adjusted_fee && student?.total_fee && Number.parseFloat(adjustmentData.adjusted_fee) < student.total_fee && (
+                  <div className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg p-4 text-center">
+                    <p className="text-sm font-medium">🎉 Student will save</p>
+                    <p className="text-3xl font-bold">
+                      ₹{(student.total_fee - Number.parseFloat(adjustmentData.adjusted_fee)).toLocaleString()}
+                    </p>
+                    <p className="text-sm opacity-90">
+                      That's {((student.total_fee - Number.parseFloat(adjustmentData.adjusted_fee)) / student.total_fee * 100).toFixed(1)}% discount!
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Helper Text */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <span className="text-2xl">💡</span>
+                  <div className="text-sm text-blue-900">
+                    <p className="font-medium mb-1">How it works:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-blue-800">
+                      <li>The original fee is <strong>₹{student?.total_fee?.toLocaleString()}</strong></li>
+                      <li>Edit the "New Fee" amount to the discounted price</li>
+                      <li>The discount will be calculated automatically</li>
+                      <li>Add a reason and save - the fee will be updated immediately!</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              {/* Adjustment Reason */}
+              <div>
+                <label htmlFor="adjustment-reason" className="block text-sm font-medium text-gray-700 mb-2">
+                  📝 Reason for Discount <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  id="adjustment-reason"
+                  required
+                  rows={3}
+                  value={adjustmentData.adjustment_reason}
+                  onChange={(e) => setAdjustmentData({ ...adjustmentData, adjustment_reason: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-gray-900"
+                  placeholder="Example: Merit scholarship approved by Director, Financial hardship case, Sports quota, SC/ST category benefit..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  💭 This reason will be shown to all users viewing this student's fee details.
+                </p>
+              </div>
+
+              {/* Director Approval Note */}
+              <div>
+                <label htmlFor="approval-note" className="block text-sm font-medium text-gray-700 mb-2">
+                  📄 Director Approval Reference (Optional)
+                </label>
+                <textarea
+                  id="approval-note"
+                  rows={2}
+                  value={adjustmentData.director_approval_note}
+                  onChange={(e) => setAdjustmentData({ ...adjustmentData, director_approval_note: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-gray-900"
+                  placeholder="Example: Approval letter #DIR/2026/123 dated 01-Feb-2026, Received director's signature stamp on 31-Jan-2026..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  📎 Add reference to approval document, letter number, date, or any proof of director's approval.
+                </p>
+              </div>
+
+              {/* Warning */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div className="text-sm text-yellow-900">
+                    <p className="font-medium mb-1">Important Notes:</p>
+                    <ul className="list-disc list-inside space-y-1 text-yellow-800">
+                      <li>Discount can only be applied BEFORE any payment is made</li>
+                      <li>Only ONE discount allowed per student</li>
+                      <li>This action will be logged in audit trail</li>
+                      <li>Fee summary will be updated immediately</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-end border-t border-gray-200 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdjustmentForm(false)}
+                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={adjustmentLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adjustmentLoading}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {adjustmentLoading ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Applying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>💰</span>
+                      <span>Apply Discount</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
