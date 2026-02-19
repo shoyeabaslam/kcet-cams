@@ -165,39 +165,80 @@ export async function PUT(
       status,
     } = body;
 
-    const result = await pool.query(
-      `UPDATE students SET
-        full_name = $1,
-        date_of_birth = $2,
-        gender = $3,
-        category = $4,
-        email = $5,
-        phone = $6,
-        address = $7,
-        previous_school = $8,
-        previous_board = $9,
-        previous_percentage = $10,
-        course_offering_id = $11,
-        status = $12,
-        updated_at = NOW()
-      WHERE id = $13
-      RETURNING *`,
-      [
-        fullName,
-        dateOfBirth,
-        gender,
-        category,
-        email,
-        phone,
-        address,
-        previousSchool,
-        previousBoard,
-        previousPercentage ? Number.parseFloat(previousPercentage) : null,
-        courseOfferingId,
-        status,
-        id,
-      ]
-    );
+    // AdmissionStaff cannot update status - only Admin and SuperAdmin can
+    const canUpdateStatus = ['Admin', 'SuperAdmin'].includes(authResult.user.role);
+    
+    let result;
+    
+    if (canUpdateStatus && status) {
+      // Admin/SuperAdmin can update all fields including status
+      result = await pool.query(
+        `UPDATE students SET
+          full_name = $1,
+          date_of_birth = $2,
+          gender = $3,
+          category = $4,
+          email = $5,
+          phone = $6,
+          address = $7,
+          previous_school = $8,
+          previous_board = $9,
+          previous_percentage = $10,
+          course_offering_id = $11,
+          status = $12,
+          updated_at = NOW()
+        WHERE id = $13
+        RETURNING *`,
+        [
+          fullName,
+          dateOfBirth,
+          gender,
+          category,
+          email,
+          phone,
+          address,
+          previousSchool,
+          previousBoard,
+          previousPercentage ? Number.parseFloat(previousPercentage) : null,
+          courseOfferingId,
+          status,
+          id,
+        ]
+      );
+    } else {
+      // AdmissionStaff can update all fields EXCEPT status
+      result = await pool.query(
+        `UPDATE students SET
+          full_name = $1,
+          date_of_birth = $2,
+          gender = $3,
+          category = $4,
+          email = $5,
+          phone = $6,
+          address = $7,
+          previous_school = $8,
+          previous_board = $9,
+          previous_percentage = $10,
+          course_offering_id = $11,
+          updated_at = NOW()
+        WHERE id = $12
+        RETURNING *`,
+        [
+          fullName,
+          dateOfBirth,
+          gender,
+          category,
+          email,
+          phone,
+          address,
+          previousSchool,
+          previousBoard,
+          previousPercentage ? Number.parseFloat(previousPercentage) : null,
+          courseOfferingId,
+          id,
+        ]
+      );
+    }
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Student not found' }, { status: 404 });
@@ -227,16 +268,38 @@ export async function DELETE(
   }
 
   try {
-    // Only Admin and SuperAdmin can delete
-    const allowedRoles = ['Admin', 'SuperAdmin'];
+    const { id } = await params;
+
+    // Check if user has permission to delete
+    // Admin and SuperAdmin can always delete
+    // AdmissionStaff can only delete if status is APPLICATION_ENTERED
+    const allowedRoles = ['Admin', 'SuperAdmin', 'AdmissionStaff'];
     if (!allowedRoles.includes(authResult.user.role)) {
       return NextResponse.json(
-        { error: 'Forbidden: Only admins can delete students' },
+        { error: 'Forbidden: You do not have permission to delete students' },
         { status: 403 }
       );
     }
 
-    const { id } = await params;
+    // If AdmissionStaff, check the student status first
+    if (authResult.user.role === 'AdmissionStaff') {
+      const statusCheck = await pool.query(
+        'SELECT status FROM students WHERE id = $1',
+        [id]
+      );
+
+      if (statusCheck.rows.length === 0) {
+        return NextResponse.json({ error: 'Student not found' }, { status: 404 });
+      }
+
+      const studentStatus = statusCheck.rows[0].status;
+      if (studentStatus !== 'APPLICATION_ENTERED') {
+        return NextResponse.json(
+          { error: 'AdmissionStaff can only delete students in APPLICATION_ENTERED status' },
+          { status: 403 }
+        );
+      }
+    }
 
     // Delete related records first (due to foreign keys)
     await pool.query('DELETE FROM student_documents WHERE student_id = $1', [id]);
